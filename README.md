@@ -1,1 +1,2 @@
-# chistansen-schmeling-schrimpf-2012
+# A comprehensive look at financial volatility prediction by economic variables
+
