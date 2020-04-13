@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1586650837536.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "2153613118",
+    "id" : "5E13BE40",
+    "lastKnownWriteTime" : 1586736837,
+    "last_content_update" : 1586736837374,
+    "path" : "~/Escritorio/data_pred/short_sample.R",
+    "project_path" : "short_sample.R",
+    "properties" : {
+        "cursorPosition" : "177,0",
+        "scrollLine" : "148",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 2,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
