@@ -42,9 +42,9 @@ gw_tbl <- gw_predictors %>%
          rbr = lty - TTR::SMA(lty, 12), 
          year = as.numeric(stringr::str_sub(yyyymm, 1, 4)),
          month = as.numeric(stringr::str_sub(yyyymm, -2))) %>%
-  rename(tb = tbl, bm = b_m) %>% 
+  rename(tb = tbl, bm = b_m, infm = infl) %>% 
   select(yyyymm, year, month, dp, dy, ep, de, bm, ntis, tb, lty, 
-         ltr, ts, def, dfr, rtb, rbr, infl, rfree) %>% 
+         ltr, ts, def, dfr, rtb, rbr, infm, rfree) %>% 
   filter(yyyymm >= 198301 & yyyymm <= 201812)
 
 # kennet-french -----------------------------------------------------------
@@ -92,7 +92,8 @@ pastor_factor_tbl <- pastor_factor %>%
 
 # fred data ---------------------------------------------------------------
 
-tickers_monthly <- c("INDPRO", "M1SL", "TCU", "PAYEMS", "UMCSENT")
+tickers_monthly <- c("INDPRO", "M1SL", "TCU", "PAYEMS", "UMCSENT", 
+                     "HOUST")
 
 fred_tbl <- tq_get(tickers_monthly,
                    get = "economic.data",
@@ -106,18 +107,30 @@ fred_tbl <- tq_get(tickers_monthly,
          m1m = log(m1sl / lag(m1sl, 1)),
          m1a = log(m1sl / lag(m1sl, 12)),
          cap = log(tcu / lag(tcu, 1)),
-         empl = log(payems / lag(payems, 1)),
-         sent = log(umcsent / lag(umcsent, 1))) %>% 
+         empl = (payems - lag(payems, 1)) / lag(payems, 1),
+         sent = (umcsent - lag(umcsent, 1)) / lag(umcsent, 1),
+         hs = (houst - lag(houst, 1)) / lag(houst, 1)) %>% 
   na.omit() %>% 
   mutate(month = strftime(date, "%m"),
          year = lubridate::year(date),
          yyyymm = as.numeric(paste0(year, month)),
          month = as.numeric(month)) %>% 
-  select_at(vars(yyyymm, year, month, ipm:sent))
+  select_at(vars(yyyymm, year, month, ipm:hs))
+
+# philadelphia fed --------------------------------------------------------
+
+diff_tbl <- openxlsx::read.xlsx("data-raw/data_raw.xlsx", sheet = 5) %>% 
+  as_tibble() %>% 
+  janitor::clean_names() %>% 
+  mutate(year = as.numeric(stringr::str_sub(yyyymm, 1, 4)),
+         month = as.numeric(stringr::str_sub(yyyymm, -2))) %>%
+  na.omit() %>% 
+  select(yyyymm, year, month, diff) %>% 
+  filter(yyyymm >= 198301 & yyyymm <= 201812)
 
 # datastream --------------------------------------------------------------
 
-datastream_tbl <- openxlsx::read.xlsx("data-raw/data_raw.xlsx", sheet = 5) %>% 
+datastream_tbl <- openxlsx::read.xlsx("data-raw/data_raw.xlsx", sheet = 6) %>% 
   as_tibble() %>% 
   janitor::clean_names() %>% 
   mutate(date = seq.Date(as.Date("1978-01-01"), as.Date("2020-02-01"), by = "month"),
@@ -127,12 +140,14 @@ datastream_tbl <- openxlsx::read.xlsx("data-raw/data_raw.xlsx", sheet = 5) %>%
          msci = log(msci / lag(msci, 1)),
          crb = log(crb / lag(crb, 1)),
          pmi = ism,
+         conf = (conf - lag(conf, 1))  / lag(conf, 1),
+         ted = (libor / 1200 - tbill / 1200),
          month = strftime(date, "%m"),
          year = lubridate::year(date),
          yyyymm = as.numeric(paste0(year, month)),
          month = as.numeric(month)) %>% 
   na.omit() %>% 
-  select(yyyymm, year, month, ordm, orda, infa, msci, crb, pmi) %>% 
+  select(yyyymm, year, month, ordm, orda, infa, msci, crb, pmi, pmbb, conf, ted) %>% 
   filter(yyyymm >= 198301 & yyyymm <= 201812)
 
 # short sample ------------------------------------------------------------
@@ -142,7 +157,14 @@ short_sample_tbl <- left_join(gw_tbl, kf_tbl) %>%
   left_join(st_tbl) %>% 
   left_join(pastor_factor_tbl) %>% 
   left_join(fred_tbl) %>% 
-  left_join(datastream_tbl)
+  left_join(diff_tbl) %>% 
+  left_join(datastream_tbl) %>% 
+  select(yyyymm, year, month, 
+         dp, ep, mkt, smb, hml, str, msci, 
+         tb, rtb, ltr, rbr, ts,
+         def, ps, ted,
+         infm, infa, ipm, ipa, hs, m1m, m1a, ordm, orda, crb, cap, empl, 
+         sent, conf, diff, pmbb, pmi)
 
 # save dataset
 library("openxlsx")
@@ -155,57 +177,21 @@ writeData(wb, "predictors", short_sample_tbl)
 addWorksheet(wb, "volatility")
 writeData(wb, "volatility", rv_stocks)
 
-saveWorkbook(wb, "short_sample_updated.xlsx", overwrite = TRUE)
+saveWorkbook(wb, "data/short_sample_updated.xlsx", overwrite = TRUE)
 
-# decriptive statistics
-short_descriptive_stats <- short_sample_tbl %>% 
-  filter(yyyymm >= 198301 & yyyymm <= 201012) %>%
-  select(-c(yyyymm:month, rfree)) %>% 
-  mutate_at(vars(ntis:crb), list(~ 100 * (.))) %>% 
-  purrr::map(function(x) cbind(mean(x, na.rm = TRUE),
-                               sd(x, na.rm = TRUE),
-                               PerformanceAnalytics::skewness(x, na.rm = TRUE),
-                               PerformanceAnalytics::kurtosis(x, na.rm = TRUE, 
-                                                              method = "moment"))) %>% 
-  bind_rows() %>%   
-  t() %>% 
-  `colnames<-`(c('Mean', 'Std', "Skew", "Kurt")) %>% 
-  as_tibble(rownames = NA) %>% 
-  mutate(variable = rownames(.)) %>% 
-  select(variable, Mean, Std, Skew, Kurt) %>% 
-  mutate_at(vars(Mean:Kurt), list(~ round(as.numeric(.), 2))) 
-
-# tickers_daily <- c("IR3TED01USM156N", "GS3M")
-# 
-# ted_tbl <- tq_get(tickers_daily, 
-#                   get = "economic.data",
-#                   periodicity = "monthly",
-#                   from = "1983-01-01") %>%
-#   tidyr::spread(symbol, price) %>% 
-#   janitor::clean_names() %>% 
-#   mutate(month = strftime(date, "%m"),
-#          year = lubridate::year(date),
-#          date = as.numeric(paste0(year, month)),
-#          month = as.numeric(month),
-#          ted = ir3ted01usm156n / 12 - gs3m / 12) %>% 
-#   select(date, year, month, ted) %>% 
-#   filter(date >= "1983-01-01" & date <= "2010-12-01") %>% 
-#   summarise_all(list(~ mean(.)))
-# 
-# # ted spread rate 
 # tickers_daily <- c("TEDRATE")
 # 
-# ted_tbl <- tq_get(tickers_daily, 
+# ted_tbl <- tq_get(tickers_daily,
 #                   get = "economic.data",
 #                   periodicity = "daily",
-#                   from = "1980-01-01") %>% 
+#                   from = "1980-01-01") %>%
 #   mutate(year = lubridate::year(date),
-#          month = lubridate::month(date)) %>% 
-#   na.omit() %>% 
-#   group_by(month, year) %>% 
-#   mutate(ted_month = mean(price) / 12) %>% 
-#   filter(row_number(date) == 1) %>% 
-#   ungroup() %>% 
-#   select(date, ted_month) %>% 
-#   mutate(date = as.Date(zoo::as.yearmon(date))) %>% 
+#          month = lubridate::month(date)) %>%
+#   na.omit() %>%
+#   group_by(month, year) %>%
+#   mutate(ted_month = mean(price) / 12) %>%
+#   filter(row_number(date) == 1) %>%
+#   ungroup() %>%
+#   select(date, ted_month) %>%
+#   mutate(date = as.Date(zoo::as.yearmon(date))) %>%
 #   summarise(mean(ted_month))

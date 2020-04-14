@@ -96,4 +96,4 @@ writeData(wb, "predictors", long_sample_tbl)
 addWorksheet(wb, "volatility")
 writeData(wb, "volatility", rv_stocks)
 
-saveWorkbook(wb, "long_sample_updated.xlsx", overwrite = TRUE)
+saveWorkbook(wb, "data/long_sample_updated.xlsx", overwrite = TRUE)
